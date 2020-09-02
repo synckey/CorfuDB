@@ -2,10 +2,18 @@ package org.corfudb.runtime.clients;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
+import java.io.File;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
+import javax.annotation.Nonnull;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.AbstractCorfuTest;
@@ -19,15 +27,6 @@ import org.corfudb.util.NodeLocator;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-
-import javax.annotation.Nonnull;
-import java.io.File;
-import java.io.IOException;
-import java.net.ServerSocket;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.util.Collections;
-import java.util.UUID;
 
 /**
  * Created by mwei on 3/28/16.
@@ -551,8 +550,7 @@ public class NettyCommTest extends AbstractCorfuTest {
                     serverContext);
             CorfuServerNode corfuServerNode = new CorfuServerNode(serverContext,
                     ImmutableMap.of(BaseServer.class, baseServer));
-            f = corfuServerNode.bindServer(serverContext.getBossGroup(),
-                    serverContext.getWorkerGroup(),
+            f = corfuServerNode.bindServer(serverContext.getWorkerGroup(),
                     corfuServerNode::configureBootstrapOptions,
                     serverContext,
                     nsr,
