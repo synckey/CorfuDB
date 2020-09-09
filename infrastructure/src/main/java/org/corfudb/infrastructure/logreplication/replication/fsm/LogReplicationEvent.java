@@ -4,6 +4,7 @@ import lombok.Data;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationEventMetadata;
 
 import java.util.UUID;
+import org.corfudb.util.Utils;
 
 /**
  * This class represents a Log Replication Event.
@@ -68,7 +69,7 @@ public class LogReplicationEvent {
 \     */
     public LogReplicationEvent(LogReplicationEventType type, LogReplicationEventMetadata metadata) {
         this.type = type;
-        this.eventID = UUID.randomUUID();
+        this.eventID = Utils.genPseudorandomUUID();
         this.metadata = metadata;
     }
 }
