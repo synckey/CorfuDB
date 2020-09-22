@@ -36,8 +36,8 @@ public class BackupRestoreIT extends AbstractIT {
     static final String backupTable = "test_table";
     static final String restoreTable = backupTable;
     static final String DEFAULT_HOST = "localhost";
-    static final String LOG_PATH1 = "/Users/maxi/corfu1";
-    static final String LOG_PATH2 = "/Users/maxi/corfu2";
+    static final String LOG_PATH1 = "/Users/jielu/corfu1";
+    static final String LOG_PATH2 = "/Users/jielu/corfu2";
 
     static final int DEFAULT_PORT = 9000;
     private static final int WRITER_PORT = DEFAULT_PORT + 1;
@@ -61,8 +61,6 @@ public class BackupRestoreIT extends AbstractIT {
                 SampleSchema.Uuid.class,
                 TableOptions.builder().build());
 
-        String name = RandomStringUtils.random(valSize, true, true);
-
         try {
             for (int i = 0; i < numEntries; i++) {
                 uuidKey = SampleSchema.Uuid.newBuilder()
@@ -70,6 +68,7 @@ public class BackupRestoreIT extends AbstractIT {
                         .setLsb(i)
                         .build();
                 TxBuilder tx = dataStore.tx(NAMESPACE);
+                String name = RandomStringUtils.random(valSize, true, true);
                 eventInfo = SampleSchema.EventInfo.newBuilder().setName(name).build();
                 tx.update(tableName, uuidKey, eventInfo, uuidKey).commit();
             }
@@ -164,13 +163,15 @@ public class BackupRestoreIT extends AbstractIT {
         assertThat(aSet.containsAll(bSet));
         assertThat(bSet.containsAll(aSet));
 
+        Query dataCorfuStoreQuery = dataCorfuStore.query(NAMESPACE);
+        Query restoreDataCorfuStoreQuery = restoreDataCorfuStore.query(NAMESPACE);
         for (int i = 0; i < numEntries; i++) {
             uuidKey = SampleSchema.Uuid.newBuilder()
                     .setMsb(i)
                     .setLsb(i)
                     .build();
-            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd1 = dataCorfuStore.query(NAMESPACE).getRecord(backupTable, uuidKey);
-            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd2 = restoreDataCorfuStore.query(NAMESPACE).getRecord(restoreTable, uuidKey);
+            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd1 = dataCorfuStoreQuery.getRecord(backupTable, uuidKey);
+            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd2 = restoreDataCorfuStoreQuery.getRecord(restoreTable, uuidKey);
             assertThat(rd1).isEqualTo(rd2);
         }
     }
