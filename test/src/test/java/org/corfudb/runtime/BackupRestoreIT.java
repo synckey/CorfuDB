@@ -18,8 +18,8 @@ import org.junit.Test;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
+
 import org.corfudb.test.SampleSchema.Uuid;
 
 @Slf4j
@@ -29,8 +29,9 @@ import org.corfudb.test.SampleSchema.Uuid;
 // Check the opaque entries are the same with the opaque entries in the original database.
 
 public class BackupRestoreIT extends AbstractIT {
-    final static public int numEntries = 10000;
+    final static public int numEntries = 1000;
     final static public int valSize = 20000;
+    static final public int numTables = 2;
     static final String NAMESPACE = "test_namespace";
     static final String backupFileName = "test_backup_file";
     static final String backupTable = "test_table";
@@ -38,6 +39,7 @@ public class BackupRestoreIT extends AbstractIT {
     static final String DEFAULT_HOST = "localhost";
     static final String LOG_PATH1 = "/Users/jielu/corfu1";
     static final String LOG_PATH2 = "/Users/jielu/corfu2";
+    static final String BACKUP_PATH = "/Users/jielu/corfu_backup";
 
     static final int DEFAULT_PORT = 9000;
     private static final int WRITER_PORT = DEFAULT_PORT + 1;
@@ -89,7 +91,7 @@ public class BackupRestoreIT extends AbstractIT {
     }
 
     @Test
-    public void backupEntryTest() throws IOException, ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    public void backupEntryTest() throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
         String logPath = LOG_PATH1 + "/corfu/log";
         Runtime.getRuntime().exec("rm -rf " + logPath);
 
@@ -174,5 +176,58 @@ public class BackupRestoreIT extends AbstractIT {
             CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd2 = restoreDataCorfuStoreQuery.getRecord(restoreTable, uuidKey);
             assertThat(rd1).isEqualTo(rd2);
         }
+    }
+
+    @Test
+    public void backupMergeFileTest() throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+        sourceServer = new CorfuServerRunner()
+                .setHost(DEFAULT_HOST)
+                .setPort(DEFAULT_PORT)
+                .setLogPath(LOG_PATH1)
+                .setSingle(true)
+                .runServer();
+
+        CorfuRuntime.CorfuRuntimeParameters params = CorfuRuntime.CorfuRuntimeParameters
+                .builder()
+                .build();
+
+        CorfuRuntime dataRuntime = CorfuRuntime.fromParameters(params).setTransactionLogging(true).parseConfigurationString(SOURCE_ENDPOINT).connect();
+        CorfuRuntime backupRuntime = CorfuRuntime.fromParameters(params).setTransactionLogging(true).parseConfigurationString(SOURCE_ENDPOINT).connect();
+
+        CorfuStore dataCorfuStore = new CorfuStore(dataRuntime);
+
+        List<String> tableNames = new ArrayList<>();
+        for (int i = 0; i < numTables; i++) {
+            tableNames.add(backupTable + "_" + i);
+        }
+
+        long time0 = System.currentTimeMillis();
+        for (String tableName : tableNames) {
+            generateData(dataCorfuStore, NAMESPACE, tableName);
+        }
+        long time1 = System.currentTimeMillis();
+        System.out.print("\nGenerated Data " + numEntries + " for " + numTables + " tables used " + (time1 - time0));
+
+        List<UUID> streamIDs = new ArrayList<>();
+        for (String tableName : tableNames) {
+            streamIDs.add(CorfuRuntime.getStreamID(TableRegistry.getFullyQualifiedTableName(NAMESPACE, tableName)));
+        }
+
+        Backup backup = new Backup(BACKUP_PATH, streamIDs, backupRuntime);
+        backup.start();
+
+        File backupDir = new File(BACKUP_PATH);
+        assertThat(backupDir)
+                .exists()
+                .isDirectory();
+
+        File tableTmpDir = new File(BACKUP_PATH + "/tmp");
+        assertThat(tableTmpDir)
+                .exists()
+                .isDirectory();
+
+        File backupTarFile = new File(BACKUP_PATH + "/backup.tar");
+        assertThat(backupTarFile).exists();
+
     }
 }

@@ -1,13 +1,15 @@
 package org.corfudb.runtime;
 
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.corfudb.protocols.logprotocol.OpaqueEntry;
 import org.corfudb.protocols.logprotocol.SMREntry;
 import org.corfudb.runtime.exceptions.TrimmedException;
 import org.corfudb.runtime.view.StreamOptions;
 import org.corfudb.runtime.view.stream.OpaqueStream;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 
+@Slf4j
 public class Backup {
     String filePath;
     List<UUID> streamIDs;
@@ -25,14 +28,14 @@ public class Backup {
         this.filePath = filePath;
         this.streamIDs = streamIDs;
         this.runtime = runtime;
-        this.timestamp = runtime.getAddressSpaceView().getCommittedTail();
+        this.timestamp = runtime.getAddressSpaceView().getLogTail();
     }
 
     public boolean start() throws IOException {
         /**
          * make a tmp directory under the filePath
          */
-        if (backup() == false) {
+        if (!backup()) {
             cleanup();
             return false;
         }
@@ -47,8 +50,17 @@ public class Backup {
      * @return
      */
     public boolean backup() throws IOException {
+        File filePathDir = new File(filePath);
+        if (!filePathDir.exists() && !filePathDir.mkdir()) {
+            return false;
+        }
+        File tmpDir = new File(filePath + "/tmp");
+        if (!tmpDir.exists() && !tmpDir.mkdir()) {
+            return false;
+        }
+
         for (UUID streamId : streamIDs) {
-            String fileName = filePath + "_" + streamId + "_" + timestamp;
+            String fileName = filePath + "/tmp/" + streamId + "_" + timestamp;
             if (!backupTable(fileName, streamId, runtime, timestamp)) {
                 return false;
             }
@@ -90,10 +102,47 @@ public class Backup {
     }
 
     /**
+     * Merge table backups into a single tar file
+     */
+    public void mergeIntoTarFile() {
+        File folder = new File(filePath + "/tmp");
+        if (!folder.isDirectory())
+            return;
+
+        File[] srcFiles = folder.listFiles();
+        if (srcFiles == null)
+            return;
+
+        byte[] buf = new byte[1024];
+        try {
+            FileOutputStream fileOutput = new FileOutputStream(filePath + "/backup.tar");
+            TarArchiveOutputStream TarOutput = new TarArchiveOutputStream(fileOutput);
+
+            for (File srcFile : srcFiles) {
+                FileInputStream fileInput = new FileInputStream(srcFile);
+                TarArchiveEntry tarEntry = new TarArchiveEntry(srcFile);
+                tarEntry.setName(srcFile.getName());
+                TarOutput.putArchiveEntry(tarEntry);
+                int num;
+                while ((num = fileInput.read(buf, 0, 1024)) != -1) {
+                    TarOutput.write(buf, 0, num);
+                }
+                TarOutput.closeArchiveEntry();
+                fileInput.close();
+            }
+            TarOutput.close();
+            fileOutput.close();
+        } catch (IOException e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    /**
      * All generated files under tmp directory will be composed into one .tar file
      */
-    public void generateTarFile() {
-
+    public void generateTarFile() throws IOException {
+        backup();
+        mergeIntoTarFile();
     }
 
     /**
