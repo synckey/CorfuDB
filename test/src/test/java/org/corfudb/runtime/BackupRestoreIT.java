@@ -222,12 +222,9 @@ public class BackupRestoreIT extends AbstractIT {
                 .isDirectory();
 
         File tableTmpDir = new File(BACKUP_PATH + "/tmp");
-        assertThat(tableTmpDir)
-                .exists()
-                .isDirectory();
+        assertThat(tableTmpDir).doesNotExist();
 
         File backupTarFile = new File(BACKUP_PATH + "/backup.tar");
         assertThat(backupTarFile).exists();
-
     }
 }

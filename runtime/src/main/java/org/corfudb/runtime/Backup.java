@@ -3,6 +3,7 @@ package org.corfudb.runtime;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.io.FileUtils;
 import org.corfudb.protocols.logprotocol.OpaqueEntry;
 import org.corfudb.protocols.logprotocol.SMREntry;
 import org.corfudb.runtime.exceptions.TrimmedException;
@@ -32,9 +33,15 @@ public class Backup {
     }
 
     public boolean start() throws IOException {
-        /**
-         * make a tmp directory under the filePath
-         */
+        File filePathDir = new File(filePath);
+        if (!filePathDir.exists() && !filePathDir.mkdir()) {
+            return false;
+        }
+        File tmpDir = new File(filePath + "/tmp");
+        if (!tmpDir.exists() && !tmpDir.mkdir()) {
+            return false;
+        }
+
         if (!backup()) {
             cleanup();
             return false;
@@ -50,15 +57,6 @@ public class Backup {
      * @return
      */
     public boolean backup() throws IOException {
-        File filePathDir = new File(filePath);
-        if (!filePathDir.exists() && !filePathDir.mkdir()) {
-            return false;
-        }
-        File tmpDir = new File(filePath + "/tmp");
-        if (!tmpDir.exists() && !tmpDir.mkdir()) {
-            return false;
-        }
-
         for (UUID streamId : streamIDs) {
             String fileName = filePath + "/tmp/" + streamId + "_" + timestamp;
             if (!backupTable(fileName, streamId, runtime, timestamp)) {
@@ -149,7 +147,7 @@ public class Backup {
      * It is called when it failed to backupTable one of the table, the whole backupTable process will fail and
      * cleanup the files under the tmp directory.
      */
-    public void cleanup() {
-
+    public void cleanup() throws IOException {
+        FileUtils.deleteDirectory(new File(filePath + "/tmp"));
     }
 }
