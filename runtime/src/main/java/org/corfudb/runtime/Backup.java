@@ -21,12 +21,14 @@ import java.util.stream.Stream;
 @Slf4j
 public class Backup {
     String filePath;
+    String tmpDirPath;
     List<UUID> streamIDs;
     long timestamp;
     CorfuRuntime runtime;
 
     public Backup(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
         this.filePath = filePath;
+        this.tmpDirPath = filePath + "/tmp";
         this.streamIDs = streamIDs;
         this.runtime = runtime;
         this.timestamp = runtime.getAddressSpaceView().getLogTail();
@@ -37,7 +39,7 @@ public class Backup {
         if (!filePathDir.exists() && !filePathDir.mkdir()) {
             return false;
         }
-        File tmpDir = new File(filePath + "/tmp");
+        File tmpDir = new File(tmpDirPath);
         if (!tmpDir.exists() && !tmpDir.mkdir()) {
             return false;
         }
@@ -58,7 +60,7 @@ public class Backup {
      */
     public boolean backup() throws IOException {
         for (UUID streamId : streamIDs) {
-            String fileName = filePath + "/tmp/" + streamId + "_" + timestamp;
+            String fileName = tmpDirPath + File.separator + streamId;
             if (!backupTable(fileName, streamId, runtime, timestamp)) {
                 return false;
             }
@@ -103,7 +105,7 @@ public class Backup {
      * Merge table backups into a single tar file
      */
     public void mergeIntoTarFile() {
-        File folder = new File(filePath + "/tmp");
+        File folder = new File(tmpDirPath);
         if (!folder.isDirectory())
             return;
 
@@ -148,6 +150,6 @@ public class Backup {
      * cleanup the files under the tmp directory.
      */
     public void cleanup() throws IOException {
-        FileUtils.deleteDirectory(new File(filePath + "/tmp"));
+        FileUtils.deleteDirectory(new File(tmpDirPath));
     }
 }

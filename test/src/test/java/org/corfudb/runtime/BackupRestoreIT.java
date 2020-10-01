@@ -31,7 +31,7 @@ import org.corfudb.test.SampleSchema.Uuid;
 public class BackupRestoreIT extends AbstractIT {
     final static public int numEntries = 1000;
     final static public int valSize = 20000;
-    static final public int numTables = 2;
+    static final public int numTables = 5;
     static final String NAMESPACE = "test_namespace";
     static final String backupFileName = "test_backup_file";
     static final String backupTable = "test_table";
@@ -49,14 +49,12 @@ public class BackupRestoreIT extends AbstractIT {
     private Process sourceServer;
     private Process destinationServer;
 
-    Table<SampleSchema.Uuid, SampleSchema.EventInfo, SampleSchema.Uuid> table1;
-    Table<SampleSchema.Uuid, SampleSchema.EventInfo, SampleSchema.Uuid> table2;
     SampleSchema.Uuid uuidKey = null;
 
     void generateData(CorfuStore dataStore, String nameSpace, String tableName) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
 
         SampleSchema.EventInfo eventInfo;
-        table1 = dataStore.openTable(NAMESPACE,
+        dataStore.openTable(nameSpace,
                 tableName,
                 SampleSchema.Uuid.class,
                 SampleSchema.EventInfo.class,
@@ -77,27 +75,39 @@ public class BackupRestoreIT extends AbstractIT {
         } catch (Exception e) {
             System.out.print("\nCaught an exception " + e);
         }
+
     }
 
-    public static boolean verifyByteArray(byte[] src, byte[] dst, int size) {
-        for (int i = 0; i < size; i++) {
-            if (src[i] != dst[i]) {
-                log.error("Byte is different at index {}", i);
-                return false;
-            }
-        }
+    void compareCorfuStore(CorfuStore corfuStore1, String tableName1, CorfuStore corfuStore2, String tableName2) {
+        Query q1 = corfuStore1.query(NAMESPACE);
+        Query q2 = corfuStore2.query(NAMESPACE);
 
-        return true;
+        // Check if keys are the same
+        Set<Uuid> aSet = q1.keySet(tableName1, null);
+        Set<Uuid> bSet = q2.keySet(tableName2, null);
+        System.out.print("\naSet size " + aSet.size() + " bSet " + bSet.size());
+        assertThat(aSet.containsAll(bSet));
+        assertThat(bSet.containsAll(aSet));
+
+        // Check if values are the same
+        for (int i = 0; i < numEntries; i++) {
+            uuidKey = SampleSchema.Uuid.newBuilder()
+                    .setMsb(i)
+                    .setLsb(i)
+                    .build();
+            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd1 = q1.getRecord(tableName1, uuidKey);
+            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd2 = q2.getRecord(tableName2, uuidKey);
+            assertThat(rd1).isEqualTo(rd2);
+        }
     }
 
     @Test
-    public void backupEntryTest() throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    public void backupSingleTableTest() throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
         String logPath = LOG_PATH1 + "/corfu/log";
         Runtime.getRuntime().exec("rm -rf " + logPath);
 
         logPath = LOG_PATH2 + "/corfu/log";
         Runtime.getRuntime().exec("rm -rf " + logPath);
-        Runtime.getRuntime().exec("rm -rf " + "/Users/maxi/Projects/CorfuDB/test/" + backupFileName);
 
         sourceServer = new CorfuServerRunner()
                 .setHost(DEFAULT_HOST)
@@ -147,43 +157,38 @@ public class BackupRestoreIT extends AbstractIT {
         long time2 = System.currentTimeMillis();
         System.out.print("\nrestore takes " + (time2 - time1));
 
-        Query q1 = dataCorfuStore.query(NAMESPACE);
-
-        table2 = restoreDataCorfuStore.openTable(NAMESPACE,
+        // Open table on restoreDataCorfuStore for the first time
+        restoreDataCorfuStore.openTable(NAMESPACE,
                 restoreTable,
                 SampleSchema.Uuid.class,
                 SampleSchema.EventInfo.class,
                 SampleSchema.Uuid.class,
                 TableOptions.builder().build());
 
-        Query q2 = restoreDataCorfuStore.query(NAMESPACE);
-
-        Set<Uuid> aSet = q1.keySet(backupTable, null);
-        Set<Uuid> bSet = q2.keySet(restoreTable, null);
-        System.out.print("\naSet size " + aSet.size() + " bSet " + bSet.size());
-
-        assertThat(aSet.containsAll(bSet));
-        assertThat(bSet.containsAll(aSet));
-
-        Query dataCorfuStoreQuery = dataCorfuStore.query(NAMESPACE);
-        Query restoreDataCorfuStoreQuery = restoreDataCorfuStore.query(NAMESPACE);
-        for (int i = 0; i < numEntries; i++) {
-            uuidKey = SampleSchema.Uuid.newBuilder()
-                    .setMsb(i)
-                    .setLsb(i)
-                    .build();
-            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd1 = dataCorfuStoreQuery.getRecord(backupTable, uuidKey);
-            CorfuRecord<SampleSchema.Uuid, SampleSchema.Uuid> rd2 = restoreDataCorfuStoreQuery.getRecord(restoreTable, uuidKey);
-            assertThat(rd1).isEqualTo(rd2);
-        }
+        compareCorfuStore(dataCorfuStore, backupTable, restoreDataCorfuStore, restoreTable);
     }
 
     @Test
-    public void backupMergeFileTest() throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    public void backupMultipleTablesTest() throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+        String logPath = LOG_PATH1 + "/corfu/log";
+        Runtime.getRuntime().exec("rm -rf " + logPath);
+
+        logPath = LOG_PATH2 + "/corfu/log";
+        Runtime.getRuntime().exec("rm -rf " + logPath);
+
+        Runtime.getRuntime().exec("rm -rf " + BACKUP_PATH);
+
         sourceServer = new CorfuServerRunner()
                 .setHost(DEFAULT_HOST)
                 .setPort(DEFAULT_PORT)
                 .setLogPath(LOG_PATH1)
+                .setSingle(true)
+                .runServer();
+        // Destination Corfu Server (data will be replicated into this server)
+        destinationServer = new CorfuServerRunner()
+                .setHost(DEFAULT_HOST)
+                .setPort(WRITER_PORT)
+                .setLogPath(LOG_PATH2)
                 .setSingle(true)
                 .runServer();
 
@@ -193,8 +198,11 @@ public class BackupRestoreIT extends AbstractIT {
 
         CorfuRuntime dataRuntime = CorfuRuntime.fromParameters(params).setTransactionLogging(true).parseConfigurationString(SOURCE_ENDPOINT).connect();
         CorfuRuntime backupRuntime = CorfuRuntime.fromParameters(params).setTransactionLogging(true).parseConfigurationString(SOURCE_ENDPOINT).connect();
+        CorfuRuntime restoreRuntime = CorfuRuntime.fromParameters(params).setTransactionLogging(true).parseConfigurationString(DESTINATION_ENDPOINT).connect();
+        CorfuRuntime restoreDataRuntime = CorfuRuntime.fromParameters(params).setTransactionLogging(true).parseConfigurationString(DESTINATION_ENDPOINT).connect();
 
         CorfuStore dataCorfuStore = new CorfuStore(dataRuntime);
+        CorfuStore restoreDataCorfuStore = new CorfuStore(restoreDataRuntime);
 
         List<String> tableNames = new ArrayList<>();
         for (int i = 0; i < numTables; i++) {
@@ -216,6 +224,7 @@ public class BackupRestoreIT extends AbstractIT {
         Backup backup = new Backup(BACKUP_PATH, streamIDs, backupRuntime);
         backup.start();
 
+        // Check backup files
         File backupDir = new File(BACKUP_PATH);
         assertThat(backupDir)
                 .exists()
@@ -226,5 +235,20 @@ public class BackupRestoreIT extends AbstractIT {
 
         File backupTarFile = new File(BACKUP_PATH + "/backup.tar");
         assertThat(backupTarFile).exists();
+
+        // Restore using backup files
+        Restore restore = new Restore(backupTarFile.getPath(), streamIDs, restoreRuntime);
+        restore.start();
+
+        // Compare data entries in CorfuStore before and after the BR
+        for (String tableName : tableNames) {
+            restoreDataCorfuStore.openTable(NAMESPACE,
+                    tableName,
+                    SampleSchema.Uuid.class,
+                    SampleSchema.EventInfo.class,
+                    SampleSchema.Uuid.class,
+                    TableOptions.builder().build());
+            compareCorfuStore(dataCorfuStore, tableName, restoreDataCorfuStore, tableName);
+        }
     }
 }
