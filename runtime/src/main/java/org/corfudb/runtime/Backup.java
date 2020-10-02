@@ -20,15 +20,27 @@ import java.util.stream.Stream;
 
 @Slf4j
 public class Backup {
+
     String filePath;
     String tmpDirPath;
     List<UUID> streamIDs;
     long timestamp;
     CorfuRuntime runtime;
 
+    /**
+     * Backup files of tables are temporarily stored under this directory
+     */
+    public static final String BACKUP_DIR_RELATIVE_PATH = "tmp";
+
+    /**
+     * Pack table backup files into a single tar file
+     * */
+    public static final String BACKUP_TAR_FILENAME = "backup.tar";
+
+
     public Backup(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
         this.filePath = filePath;
-        this.tmpDirPath = filePath + "/tmp";
+        this.tmpDirPath = filePath + File.separator + BACKUP_DIR_RELATIVE_PATH;
         this.streamIDs = streamIDs;
         this.runtime = runtime;
         this.timestamp = runtime.getAddressSpaceView().getLogTail();
@@ -36,11 +48,11 @@ public class Backup {
 
     public boolean start() throws IOException {
         File filePathDir = new File(filePath);
-        if (!filePathDir.exists() && !filePathDir.mkdir()) {
+        if (!filePathDir.exists() && !filePathDir.mkdirs()) {
             return false;
         }
         File tmpDir = new File(tmpDirPath);
-        if (!tmpDir.exists() && !tmpDir.mkdir()) {
+        if (!tmpDir.exists() && !tmpDir.mkdirs()) {
             return false;
         }
 
@@ -115,7 +127,7 @@ public class Backup {
 
         byte[] buf = new byte[1024];
         try {
-            FileOutputStream fileOutput = new FileOutputStream(filePath + "/backup.tar");
+            FileOutputStream fileOutput = new FileOutputStream(filePath + File.separator + BACKUP_TAR_FILENAME);
             TarArchiveOutputStream TarOutput = new TarArchiveOutputStream(fileOutput);
 
             for (File srcFile : srcFiles) {

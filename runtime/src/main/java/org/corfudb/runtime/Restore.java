@@ -29,6 +29,11 @@ public class Restore {
     CorfuRuntime runtime;
     CorfuStore corfuStore;
 
+    /**
+     * Unpack the backup tar file and store the output files under this directory
+     * */
+    public static final String TABLE_DIR_RELATIVE_PATH = "table_backups";
+
     public Restore(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
         this.filePath = filePath;
         this.streamIDs = streamIDs;
@@ -45,8 +50,8 @@ public class Restore {
         if (!parentFile.exists() && !parentFile.mkdirs()) {
             return false;
         }
-        tableDirPath = parentFile.getPath() + File.separator + "/table_backups";
-        new File(tableDirPath).mkdir();
+        tableDirPath = parentFile.getPath() + File.separator + TABLE_DIR_RELATIVE_PATH;
+        new File(tableDirPath).mkdirs();
 
         openTarFile();
 
@@ -102,7 +107,7 @@ public class Restore {
                 txBuilder.logUpdate(streamId, smrEntries);
                 txBuilder.commit(ts);
                 numEntries++;
-                log.debug("write uuid {} src uuid {} with numEntries", streamId, numEntries);
+                log.debug("write uuid {} src uuid {} with {} numEntries", streamId, srcStreamId, numEntries);
             }
         } catch (Exception e) {
             log.error("catch an exception ", e);

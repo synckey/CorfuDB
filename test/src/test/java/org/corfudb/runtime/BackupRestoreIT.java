@@ -78,7 +78,7 @@ public class BackupRestoreIT extends AbstractIT {
 
     }
 
-    void compareCorfuStore(CorfuStore corfuStore1, String tableName1, CorfuStore corfuStore2, String tableName2) {
+    void compareCorfuStoreTables(CorfuStore corfuStore1, String tableName1, CorfuStore corfuStore2, String tableName2) {
         Query q1 = corfuStore1.query(NAMESPACE);
         Query q2 = corfuStore2.query(NAMESPACE);
 
@@ -165,7 +165,7 @@ public class BackupRestoreIT extends AbstractIT {
                 SampleSchema.Uuid.class,
                 TableOptions.builder().build());
 
-        compareCorfuStore(dataCorfuStore, backupTable, restoreDataCorfuStore, restoreTable);
+        compareCorfuStoreTables(dataCorfuStore, backupTable, restoreDataCorfuStore, restoreTable);
     }
 
     @Test
@@ -248,7 +248,7 @@ public class BackupRestoreIT extends AbstractIT {
                     SampleSchema.EventInfo.class,
                     SampleSchema.Uuid.class,
                     TableOptions.builder().build());
-            compareCorfuStore(dataCorfuStore, tableName, restoreDataCorfuStore, tableName);
+            compareCorfuStoreTables(dataCorfuStore, tableName, restoreDataCorfuStore, tableName);
         }
     }
 }
