@@ -22,25 +22,25 @@ import java.util.stream.Stream;
 public class Backup {
 
     String filePath;
-    String tmpDirPath;
+    String backupDirPath;
     List<UUID> streamIDs;
     long timestamp;
     CorfuRuntime runtime;
 
     /**
-     * Backup files of tables are temporarily stored under this directory
+     * Backup files of tables are temporarily stored under this directory. They are deleted after backup finishes.
      */
     public static final String BACKUP_DIR_RELATIVE_PATH = "tmp";
 
     /**
      * Pack table backup files into a single tar file
-     * */
+     */
     public static final String BACKUP_TAR_FILENAME = "backup.tar";
 
 
     public Backup(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
         this.filePath = filePath;
-        this.tmpDirPath = filePath + File.separator + BACKUP_DIR_RELATIVE_PATH;
+        this.backupDirPath = filePath + File.separator + BACKUP_DIR_RELATIVE_PATH;
         this.streamIDs = streamIDs;
         this.runtime = runtime;
         this.timestamp = runtime.getAddressSpaceView().getLogTail();
@@ -51,8 +51,9 @@ public class Backup {
         if (!filePathDir.exists() && !filePathDir.mkdirs()) {
             return false;
         }
-        File tmpDir = new File(tmpDirPath);
-        if (!tmpDir.exists() && !tmpDir.mkdirs()) {
+
+        File backupDir = new File(backupDirPath);
+        if (!backupDir.exists() && !backupDir.mkdirs()) {
             return false;
         }
 
@@ -72,7 +73,7 @@ public class Backup {
      */
     public boolean backup() throws IOException {
         for (UUID streamId : streamIDs) {
-            String fileName = tmpDirPath + File.separator + streamId;
+            String fileName = backupDirPath + File.separator + streamId;
             if (!backupTable(fileName, streamId, runtime, timestamp)) {
                 return false;
             }
@@ -114,54 +115,37 @@ public class Backup {
     }
 
     /**
-     * Merge table backups into a single tar file
-     */
-    public void mergeIntoTarFile() {
-        File folder = new File(tmpDirPath);
-        if (!folder.isDirectory())
-            return;
-
-        File[] srcFiles = folder.listFiles();
-        if (srcFiles == null)
-            return;
-
-        byte[] buf = new byte[1024];
-        try {
-            FileOutputStream fileOutput = new FileOutputStream(filePath + File.separator + BACKUP_TAR_FILENAME);
-            TarArchiveOutputStream TarOutput = new TarArchiveOutputStream(fileOutput);
-
-            for (File srcFile : srcFiles) {
-                FileInputStream fileInput = new FileInputStream(srcFile);
-                TarArchiveEntry tarEntry = new TarArchiveEntry(srcFile);
-                tarEntry.setName(srcFile.getName());
-                TarOutput.putArchiveEntry(tarEntry);
-                int num;
-                while ((num = fileInput.read(buf, 0, 1024)) != -1) {
-                    TarOutput.write(buf, 0, num);
-                }
-                TarOutput.closeArchiveEntry();
-                fileInput.close();
-            }
-            TarOutput.close();
-            fileOutput.close();
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-    }
-
-    /**
      * All generated files under tmp directory will be composed into one .tar file
      */
     public void generateTarFile() throws IOException {
-        backup();
-        mergeIntoTarFile();
+        File folder = new File(backupDirPath);
+        File[] srcFiles = folder.listFiles();
+
+        FileOutputStream fileOutput = new FileOutputStream(filePath + File.separator + BACKUP_TAR_FILENAME);
+        TarArchiveOutputStream TarOutput = new TarArchiveOutputStream(fileOutput);
+
+        int count;
+        byte[] buf = new byte[1024];
+        for (File srcFile : srcFiles) {
+            FileInputStream fileInput = new FileInputStream(srcFile);
+            TarArchiveEntry tarEntry = new TarArchiveEntry(srcFile);
+            tarEntry.setName(srcFile.getName());
+            TarOutput.putArchiveEntry(tarEntry);
+
+            while ((count = fileInput.read(buf, 0, 1024)) != -1) {
+                TarOutput.write(buf, 0, count);
+            }
+            TarOutput.closeArchiveEntry();
+            fileInput.close();
+        }
+        TarOutput.close();
+        fileOutput.close();
     }
 
     /**
-     * It is called when it failed to backupTable one of the table, the whole backupTable process will fail and
-     * cleanup the files under the tmp directory.
+     * Cleanup the table backup files under the backupDir directory.
      */
     public void cleanup() throws IOException {
-        FileUtils.deleteDirectory(new File(tmpDirPath));
+        FileUtils.deleteDirectory(new File(backupDirPath));
     }
 }

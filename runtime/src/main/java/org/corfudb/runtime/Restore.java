@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.io.FileUtils;
 import org.corfudb.protocols.logprotocol.OpaqueEntry;
 import org.corfudb.protocols.logprotocol.SMREntry;
 import org.corfudb.runtime.collections.CorfuStore;
@@ -31,7 +32,7 @@ public class Restore {
 
     /**
      * Unpack the backup tar file and store the output files under this directory
-     * */
+     */
     public static final String TABLE_DIR_RELATIVE_PATH = "table_backups";
 
     public Restore(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
@@ -46,10 +47,12 @@ public class Restore {
         if (!backupTarFile.exists()) {
             return false;
         }
+
         File parentFile = backupTarFile.getParentFile();
         if (!parentFile.exists() && !parentFile.mkdirs()) {
             return false;
         }
+
         tableDirPath = parentFile.getPath() + File.separator + TABLE_DIR_RELATIVE_PATH;
         new File(tableDirPath).mkdirs();
 
@@ -59,7 +62,12 @@ public class Restore {
             return false;
         };
 
-        restore();
+        if (!restore()) {
+            cleanup();
+            return false;
+        }
+
+        cleanup();
         return true;
     }
 
@@ -83,7 +91,6 @@ public class Restore {
     public static boolean restoreTable(String fileName, UUID streamId, UUID srcStreamId, CorfuStore corfuStore) throws IOException {
         FileInputStream fileInput = new FileInputStream(fileName);
         long numEntries = 0;
-        Path path = Paths.get(fileName);
 
         try {
 
@@ -119,22 +126,20 @@ public class Restore {
     }
 
     /**
-     * Open the given backup tar file and save the table's backup to /tmp
-     * */
+     * Open the backup tar file and save the table backups to tableDir directory
+     */
     public void openTarFile() throws IOException {
         FileInputStream fileInput = new FileInputStream(filePath);
         TarArchiveInputStream TarInput = new TarArchiveInputStream(fileInput);
 
         int count;
-        byte data[] = new byte[1024];
+        byte buf[] = new byte[1024];
         TarArchiveEntry entry;
         while ((entry = TarInput.getNextTarEntry()) != null) {
             String tablePath = tableDirPath + File.separator + entry.getName();
-            FileOutputStream fos = new FileOutputStream(tablePath, false);
-            try (BufferedOutputStream dest = new BufferedOutputStream(fos, 1024)) {
-                while ((count = TarInput.read(data, 0, 1024)) != -1) {
-                    dest.write(data, 0, count);
-                }
+            FileOutputStream fos = new FileOutputStream(tablePath);
+            while ((count = TarInput.read(buf, 0, 1024)) != -1) {
+                fos.write(buf, 0, count);
             }
         }
     }
@@ -143,8 +148,15 @@ public class Restore {
      * Some verifications such as
      * - Compare the user provided streamIds and names of table backups under tmp directory, or some metadata file
      * - Checksum
-     * */
+     */
     public boolean verify() {
         return true;
+    }
+
+    /**
+     * Cleanup the table backup files under the tableDir directory.
+     */
+    public void cleanup() throws IOException {
+        FileUtils.deleteDirectory(new File(tableDirPath));
     }
 }
