@@ -97,6 +97,9 @@ public class LogReplicationSinkManager implements DataReceiver {
 
     private ExecutorService applyExecutor;
 
+    @Getter
+    private AtomicBoolean ongoingApply = new AtomicBoolean(false);
+
     /**
      * Constructor Sink Manager
      *
@@ -422,8 +425,11 @@ public class LogReplicationSinkManager implements DataReceiver {
         }
     }
 
-    private void startSnapshotApplyAsync(LogReplicationEntry entry) {
-        applyExecutor.submit(() -> startSnapshotApply(entry));
+    private synchronized void startSnapshotApplyAsync(LogReplicationEntry entry) {
+        if (!ongoingApply.get()) {
+            ongoingApply.set(true);
+            applyExecutor.submit(() -> startSnapshotApply(entry));
+        }
     }
 
     private void startSnapshotApply(LogReplicationEntry entry) {
@@ -432,6 +438,7 @@ public class LogReplicationSinkManager implements DataReceiver {
         snapshotWriter.startSnapshotSyncApply();
         completeSnapshotApply(entry);
         setDataConsistent(true);
+        ongoingApply.set(false);
         log.debug("Exit Start Snapshot Sync Apply, id={}", entry.getMetadata().getSyncRequestId());
     }
 
@@ -510,6 +517,20 @@ public class LogReplicationSinkManager implements DataReceiver {
     public void shutdown() {
         this.runtime.shutdown();
         this.applyExecutor.shutdownNow();
+    }
+
+    /**
+     * Resume Snapshot Sync Apply
+     *
+     * In the event of restarts, a Snapshot Sync which had finished transfer can resume the apply stage.
+     */
+    public void resumeSnapshotApply() {
+        // Construct Log Replication Entry message used to complete the Snapshot Sync with info in the metadata manager
+        LogReplicationEntryMetadata metadata = new LogReplicationEntryMetadata(MessageType.SNAPSHOT_END,
+                logReplicationMetadataManager.getTopologyConfigId(),
+                -1L, logReplicationMetadataManager.getLastTransferredSnapshotTimestamp(),
+                new UUID(logReplicationMetadataManager.getCurrentSnapshotSyncCycleId(), Long.MAX_VALUE));
+        startSnapshotApplyAsync(new LogReplicationEntry(metadata));
     }
 
     enum RxState {

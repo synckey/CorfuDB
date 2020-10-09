@@ -306,7 +306,7 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
      * @param snapshot base snapshot timestamp
      */
     private void applyShadowStream(UUID streamId, long snapshot) {
-        log.trace("Apply shadow stream for stream {}, snapshot={}", streamId, snapshot);
+        log.debug("Apply shadow stream for stream {}, snapshot={}", streamId, snapshot);
         UUID shadowStreamId = regularToShadowStreamId.get(streamId);
 
         // In order to avoid data loss as part of a plugin failing to successfully
