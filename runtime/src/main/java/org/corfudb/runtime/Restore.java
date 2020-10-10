@@ -1,11 +1,8 @@
 package org.corfudb.runtime;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.io.FileUtils;
 import org.corfudb.protocols.logprotocol.OpaqueEntry;
 import org.corfudb.protocols.logprotocol.SMREntry;
@@ -15,8 +12,8 @@ import org.corfudb.util.serializer.Serializers;
 
 import java.io.*;
 import java.lang.reflect.Array;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,20 +21,32 @@ import static org.corfudb.runtime.view.TableRegistry.CORFU_SYSTEM_NAMESPACE;
 
 @Slf4j
 public class Restore {
-    String filePath;
-    String tableDirPath;
-    List<UUID> streamIDs;
-    CorfuRuntime runtime;
-    CorfuStore corfuStore;
+
+    // The path of backup tar file
+    private final String filePath;
+
+    // The path of a temporary directory under which the unpacked table's backup files are stored
+    private final String restoreTempDirPath;
+
+    // The stream IDs of tables which are restored
+    private List<UUID> streamIDs;
+
+    // The Corfu Runtime which is performing the restore
+    private CorfuRuntime runtime;
+
+    // The Corfu Store associated with the runtime
+    private CorfuStore corfuStore;
 
     /**
-     * Unpack the backup tar file and store the output files under this directory
+     * Unpacked files from backup tar file are stored under RESTORE_TEMP_DIR. They are deleted after restore finishes.
      */
-    public static final String TABLE_DIR_RELATIVE_PATH = "table_backups";
+    private static final String RESTORE_TEMP_DIR_PREFIX = "corfu_restore_";
 
-    public Restore(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
+
+    public Restore(String filePath, CorfuRuntime runtime) throws IOException {
         this.filePath = filePath;
-        this.streamIDs = streamIDs;
+        this.restoreTempDirPath = Files.createTempDirectory(RESTORE_TEMP_DIR_PREFIX).toString();
+        this.streamIDs = new ArrayList<>();
         this.runtime = runtime;
         this.corfuStore = new CorfuStore(runtime);
     }
@@ -48,19 +57,11 @@ public class Restore {
             return false;
         }
 
-        File parentFile = backupTarFile.getParentFile();
-        if (!parentFile.exists() && !parentFile.mkdirs()) {
-            return false;
-        }
-
-        tableDirPath = parentFile.getPath() + File.separator + TABLE_DIR_RELATIVE_PATH;
-        new File(tableDirPath).mkdirs();
-
         openTarFile();
 
         if (!verify()) {
             return false;
-        };
+        }
 
         if (!restore()) {
             cleanup();
@@ -71,10 +72,10 @@ public class Restore {
         return true;
     }
 
-    public boolean restore() throws IOException {
+    private boolean restore() throws IOException {
         for (UUID streamId : streamIDs) {
-            String fileName = tableDirPath + File.separator + streamId;
-            if (!restoreTable(fileName, streamId, streamId, corfuStore)) {
+            String fileName = restoreTempDirPath + File.separator + streamId;
+            if (!restoreTable(fileName, streamId)) {
                 return false;
             }
         }
@@ -88,7 +89,7 @@ public class Restore {
      * @param streamId
      * @return
      */
-    public static boolean restoreTable(String fileName, UUID streamId, UUID srcStreamId, CorfuStore corfuStore) throws IOException {
+    private boolean restoreTable(String fileName, UUID streamId) throws IOException {
         FileInputStream fileInput = new FileInputStream(fileName);
         long numEntries = 0;
 
@@ -104,7 +105,7 @@ public class Restore {
              */
             while (fileInput.available()> 0) {
                 OpaqueEntry opaqueEntry = OpaqueEntry.read(fileInput);
-                List<SMREntry> smrEntries = opaqueEntry.getEntries().get(srcStreamId);
+                List<SMREntry> smrEntries = opaqueEntry.getEntries().get(streamId);
                 if (smrEntries == null || smrEntries.isEmpty()) {
                     continue;
                 }
@@ -114,11 +115,11 @@ public class Restore {
                 txBuilder.logUpdate(streamId, smrEntries);
                 txBuilder.commit(ts);
                 numEntries++;
-                log.debug("write uuid {} src uuid {} with {} numEntries", streamId, srcStreamId, numEntries);
+                log.debug("write uuid {} with {} numEntries", streamId, numEntries);
             }
         } catch (Exception e) {
             log.error("catch an exception ", e);
-            throw e;
+            return false;
         }
 
         fileInput.close();
@@ -128,17 +129,18 @@ public class Restore {
     /**
      * Open the backup tar file and save the table backups to tableDir directory
      */
-    public void openTarFile() throws IOException {
+    private void openTarFile() throws IOException {
         FileInputStream fileInput = new FileInputStream(filePath);
-        TarArchiveInputStream TarInput = new TarArchiveInputStream(fileInput);
+        TarArchiveInputStream tarInput = new TarArchiveInputStream(fileInput);
 
         int count;
-        byte buf[] = new byte[1024];
+        byte[] buf = new byte[1024];
         TarArchiveEntry entry;
-        while ((entry = TarInput.getNextTarEntry()) != null) {
-            String tablePath = tableDirPath + File.separator + entry.getName();
+        while ((entry = tarInput.getNextTarEntry()) != null) {
+            streamIDs.add(UUID.fromString(entry.getName()));
+            String tablePath = restoreTempDirPath + File.separator + entry.getName();
             FileOutputStream fos = new FileOutputStream(tablePath);
-            while ((count = TarInput.read(buf, 0, 1024)) != -1) {
+            while ((count = tarInput.read(buf, 0, 1024)) != -1) {
                 fos.write(buf, 0, count);
             }
         }
@@ -149,14 +151,14 @@ public class Restore {
      * - Compare the user provided streamIds and names of table backups under tmp directory, or some metadata file
      * - Checksum
      */
-    public boolean verify() {
+    private boolean verify() {
         return true;
     }
 
     /**
      * Cleanup the table backup files under the tableDir directory.
      */
-    public void cleanup() throws IOException {
-        FileUtils.deleteDirectory(new File(tableDirPath));
+    private void cleanup() throws IOException {
+        FileUtils.deleteDirectory(new File(restoreTempDirPath));
     }
 }

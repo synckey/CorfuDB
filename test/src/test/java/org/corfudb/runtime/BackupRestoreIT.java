@@ -7,10 +7,8 @@ import org.corfudb.integration.AbstractIT;
 import org.corfudb.runtime.collections.CorfuRecord;
 import org.corfudb.runtime.collections.CorfuStore;
 import org.corfudb.runtime.collections.Query;
-import org.corfudb.runtime.collections.Table;
 import org.corfudb.runtime.collections.TableOptions;
 import org.corfudb.runtime.collections.TxBuilder;
-import org.corfudb.runtime.view.AbstractViewTest;
 import org.corfudb.runtime.view.TableRegistry;
 import org.corfudb.test.SampleSchema;
 import org.junit.Test;
@@ -46,7 +44,7 @@ public class BackupRestoreIT extends AbstractIT {
     static final String LOG_PATH1 = getCorfuServerLogPath(DEFAULT_HOST, DEFAULT_PORT);
 
     // Location where the backup tar file is stored
-     static final String BACKUP_PATH = new File(LOG_PATH1).getParent() + File.separator + "backup";
+     static final String BACKUP_TAR_FILE_PATH = new File(LOG_PATH1).getParent() + File.separator + "backup.tar";
 
     private Process sourceServer;
     private Process destinationServer;
@@ -204,8 +202,8 @@ public class BackupRestoreIT extends AbstractIT {
         Set<Uuid> aSet = q1.keySet(tableName1, null);
         Set<Uuid> bSet = q2.keySet(tableName2, null);
         System.out.print("\naSet size " + aSet.size() + " bSet " + bSet.size());
-        assertThat(aSet.containsAll(bSet));
-        assertThat(bSet.containsAll(aSet));
+        assertThat(aSet.containsAll(bSet)).isTrue();
+        assertThat(bSet.containsAll(aSet)).isTrue();
 
         // Check if values are the same
         for (int i = 0; i < numEntries; i++) {
@@ -251,21 +249,15 @@ public class BackupRestoreIT extends AbstractIT {
         }
 
         // Backup
-        Backup backup = new Backup(BACKUP_PATH, streamIDs, backupRuntime);
+        Backup backup = new Backup(BACKUP_TAR_FILE_PATH, streamIDs, backupRuntime);
         backup.start();
 
-        // Verify that backup directory exists and is a directory
-        File backupDir = new File(BACKUP_PATH);
-        assertThat(backupDir)
-                .exists()
-                .isDirectory();
-
         // Verify that backup tar file exists
-        File backupTarFile = new File(BACKUP_PATH + "/backup.tar");
+        File backupTarFile = new File(BACKUP_TAR_FILE_PATH);
         assertThat(backupTarFile).exists();
 
         // Restore using backup files
-        Restore restore = new Restore(backupTarFile.getPath(), streamIDs, restoreRuntime);
+        Restore restore = new Restore(BACKUP_TAR_FILE_PATH, restoreRuntime);
         restore.start();
 
         // Compare data entries in CorfuStore before and after the Backup/Restore

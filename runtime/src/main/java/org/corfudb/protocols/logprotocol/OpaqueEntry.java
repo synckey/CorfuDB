@@ -35,8 +35,6 @@ import static org.corfudb.util.serializer.CorfuSerializer.corfuPayloadMagic;
 public class OpaqueEntry implements Serializable {
 
     private static final int INT_BYTES = 4;
-    public static byte[] writeBytes;
-    public static byte[] readBytes;
 
     private static OpaqueEntry empty = new OpaqueEntry(Address.NON_EXIST, Collections.emptyMap());
 

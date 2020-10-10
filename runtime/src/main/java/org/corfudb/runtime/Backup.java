@@ -11,6 +11,7 @@ import org.corfudb.runtime.view.StreamOptions;
 import org.corfudb.runtime.view.stream.OpaqueStream;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -21,42 +22,36 @@ import java.util.stream.Stream;
 @Slf4j
 public class Backup {
 
-    String filePath;
-    String backupDirPath;
-    List<UUID> streamIDs;
-    long timestamp;
-    CorfuRuntime runtime;
+    // The path of backup tar file
+    private final String filePath;
+
+    // The path of a temporary directory under which table's backup files are stored
+    private final String backupTempDirPath;
+
+    // The stream IDs of tables which are backed up
+    private final List<UUID> streamIDs;
+
+    // The snapshot address to back up
+    private final long timestamp;
+
+    // The Corfu Runtime which is performing the back up
+    private final CorfuRuntime runtime;
 
     /**
-     * Backup files of tables are temporarily stored under this directory. They are deleted after backup finishes.
+     * Backup files of tables are temporarily stored under BACKUP_TEMP_DIR. They are deleted after backup finishes.
      */
-    public static final String BACKUP_DIR_RELATIVE_PATH = "tmp";
-
-    /**
-     * Pack table backup files into a single tar file
-     */
-    public static final String BACKUP_TAR_FILENAME = "backup.tar";
+    private static final String BACKUP_TEMP_DIR_PREFIX = "corfu_backup_";
 
 
-    public Backup(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) {
+    public Backup(String filePath, List<UUID> streamIDs, CorfuRuntime runtime) throws IOException {
         this.filePath = filePath;
-        this.backupDirPath = filePath + File.separator + BACKUP_DIR_RELATIVE_PATH;
+        this.backupTempDirPath = Files.createTempDirectory(BACKUP_TEMP_DIR_PREFIX).toString();
         this.streamIDs = streamIDs;
         this.runtime = runtime;
         this.timestamp = runtime.getAddressSpaceView().getLogTail();
     }
 
     public boolean start() throws IOException {
-        File filePathDir = new File(filePath);
-        if (!filePathDir.exists() && !filePathDir.mkdirs()) {
-            return false;
-        }
-
-        File backupDir = new File(backupDirPath);
-        if (!backupDir.exists() && !backupDir.mkdirs()) {
-            return false;
-        }
-
         if (!backup()) {
             cleanup();
             return false;
@@ -68,13 +63,13 @@ public class Backup {
     }
 
     /**
-     * All temp backupTable files will be put at filePath/tmp directory.
+     * All temp backupTable files will be put at BACKUP_DIR_PATH directory.
      * @return
      */
-    public boolean backup() throws IOException {
+    private boolean backup() throws IOException {
         for (UUID streamId : streamIDs) {
-            String fileName = backupDirPath + File.separator + streamId;
-            if (!backupTable(fileName, streamId, runtime, timestamp)) {
+            String fileName = backupTempDirPath + File.separator + streamId;
+            if (!backupTable(fileName, streamId)) {
                 return false;
             }
         }
@@ -88,7 +83,7 @@ public class Backup {
      * @param fileName
      * @param uuid
      */
-    public static boolean backupTable(String fileName, UUID uuid, CorfuRuntime runtime, long timestamp) throws IOException, TrimmedException {
+    private boolean backupTable(String fileName, UUID uuid) throws IOException, TrimmedException {
         FileOutputStream fileOutput = new FileOutputStream(fileName);
         StreamOptions options = StreamOptions.builder()
                 .ignoreTrimmed(false)
@@ -117,12 +112,12 @@ public class Backup {
     /**
      * All generated files under tmp directory will be composed into one .tar file
      */
-    public void generateTarFile() throws IOException {
-        File folder = new File(backupDirPath);
+    private void generateTarFile() throws IOException {
+        File folder = new File(backupTempDirPath);
         File[] srcFiles = folder.listFiles();
 
-        FileOutputStream fileOutput = new FileOutputStream(filePath + File.separator + BACKUP_TAR_FILENAME);
-        TarArchiveOutputStream TarOutput = new TarArchiveOutputStream(fileOutput);
+        FileOutputStream fileOutput = new FileOutputStream(filePath);
+        TarArchiveOutputStream tarOutput = new TarArchiveOutputStream(fileOutput);
 
         int count;
         byte[] buf = new byte[1024];
@@ -130,22 +125,22 @@ public class Backup {
             FileInputStream fileInput = new FileInputStream(srcFile);
             TarArchiveEntry tarEntry = new TarArchiveEntry(srcFile);
             tarEntry.setName(srcFile.getName());
-            TarOutput.putArchiveEntry(tarEntry);
+            tarOutput.putArchiveEntry(tarEntry);
 
             while ((count = fileInput.read(buf, 0, 1024)) != -1) {
-                TarOutput.write(buf, 0, count);
+                tarOutput.write(buf, 0, count);
             }
-            TarOutput.closeArchiveEntry();
+            tarOutput.closeArchiveEntry();
             fileInput.close();
         }
-        TarOutput.close();
+        tarOutput.close();
         fileOutput.close();
     }
 
     /**
      * Cleanup the table backup files under the backupDir directory.
      */
-    public void cleanup() throws IOException {
-        FileUtils.deleteDirectory(new File(backupDirPath));
+    private void cleanup() throws IOException {
+        FileUtils.deleteDirectory(new File(backupTempDirPath));
     }
 }
